@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bauleitplanung dashboard</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<style>
+:root{--bg:#f7f7f5;--card:#fff;--fg:#1d1d1b;--mute:#6b6b66;--line:#e3e2dc;--ok:#2f7d4f;--empty:#8a8a83;--error:#c0392b;--skipped:#c58a12;--bar:#3b6ea5;--new:#2f7d4f;--changed:#3b6ea5}
+@media (prefers-color-scheme:dark){:root{--bg:#161615;--card:#1f1f1d;--fg:#ecebe6;--mute:#9b9a93;--line:#33322f;--bar:#6c9bd2;--changed:#6c9bd2}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}
+main{max-width:1200px;margin:0 auto;padding:24px 16px 64px}h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:32px 0 12px}
+.mute{color:var(--mute)}.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:16px}
+.tile b{display:block;font-size:24px;font-variant-numeric:tabular-nums}.tile span{color:var(--mute);font-size:12px}
+.run summary{cursor:pointer;color:var(--mute);margin-top:6px}.run ol{margin:8px 0 0;padding-left:20px;color:var(--mute);font-size:13px}
+.cols{display:grid;grid-template-columns:3fr 2fr;gap:16px}@media (max-width:860px){.cols{grid-template-columns:1fr}}
+.bars{display:grid;gap:4px;margin-bottom:14px}.bar{display:grid;grid-template-columns:130px 1fr 56px;gap:8px;align-items:center;font-size:13px}
+.bar .track{background:var(--line);border-radius:4px;height:8px}.bar .fill{background:var(--bar);height:8px;border-radius:4px}
+h3{font-size:13px;margin:0 0 8px;color:var(--mute);font-weight:600}.num{text-align:right;font-variant-numeric:tabular-nums}
+#map{height:520px;border-radius:10px;border:1px solid var(--line)}.legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;font-size:12px}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;color:var(--mute);font-weight:600;background:var(--card)}.wrap th{position:sticky;top:0}
+.wrap{overflow-x:auto;max-height:620px;overflow-y:auto}tr.town{cursor:pointer}tr.town:hover{background:var(--bg)}
+.badge{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;color:#fff;white-space:nowrap}
+.controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center}input,select,button{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg)}
+button{cursor:pointer}details.box>summary{cursor:pointer;font-size:16px;font-weight:600;margin:32px 0 12px}
+a{color:var(--bar)}.sub td{background:var(--bg);font-size:13px}td.date{white-space:nowrap;font-variant-numeric:tabular-nums}
+</style></head><body><main>
+<h1>Bauleitplanung harvest</h1>
+<div class="mute" id="sub"></div>
+<details class="run"><summary id="runline"></summary><ol id="steps"></ol></details>
+<div class="tiles" id="tiles"></div>
+
+<h2 id="changes-h">New &amp; changed in this run</h2>
+<div class="card"><div class="controls"><input id="cq" placeholder="Search title or town" size="28">
+<select id="ck"><option value="">New and changed</option><option value="new">New only</option><option value="changed">Changed only</option></select>
+<span class="mute" id="ccount"></span></div><div id="cnote" class="mute"></div>
+<div class="wrap"><table id="ctab"><thead><tr><th></th><th>Published</th><th>Town</th><th>Type</th><th>Step</th><th>Title</th></tr></thead><tbody></tbody></table></div>
+<button id="cmore" hidden>Show more</button></div>
+
+<h2>Latest notices</h2>
+<div class="cols"><div class="card"><h3>Newest publications (by publication date)</h3><table id="latest"><tbody></tbody></table></div>
+<div class="card"><h3>Records by type</h3><div class="bars" id="by-type"></div><h3>By region</h3><div class="bars" id="by-region"></div>
+<h3>By procedure step</h3><div class="bars" id="by-step"></div></div></div>
+
+<h2>Map</h2><div id="map"></div><div class="legend" id="legend"></div>
+
+<h2>Problems</h2><div class="card"><table id="errors"><thead><tr><th>Reason</th><th class="num">Towns</th><th>Towns affected</th></tr></thead><tbody></tbody></table></div>
+
+<details class="box"><summary>All towns</summary><div class="card"><div class="controls"><input id="q" placeholder="Search town, AGS, district" size="28">
+<select id="st"><option value="">All statuses</option></select><span class="mute" id="count"></span></div>
+<div class="wrap"><table id="towns"><thead><tr><th>AGS</th><th>Town</th><th>District</th><th>Status</th><th>Reason</th>
+<th class="num">Pages</th><th class="num">Notices</th><th class="num">Sec</th><th>Links</th></tr></thead><tbody></tbody></table></div></div></details>
+<p class="mute">Data source: Bayerische Vermessungsverwaltung – www.geodaten.bayern.de und bayerische Gemeinden. Points are municipality centroids.</p>
+</main>
+<script id="data" type="application/json">__DATA__</script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+const data = JSON.parse(document.getElementById('data').textContent);
+const meta = data.meta;
+const load = meta.load || {};
+const statusCounts = meta.status || {};
+const COLORS = {ok: 'var(--ok)', no_planning_content: 'var(--empty)', error: 'var(--error)', skipped: 'var(--skipped)',
+                new: 'var(--new)', changed: 'var(--changed)'};
+const MAP_COLORS = {ok: '#2f7d4f', no_planning_content: '#8a8a83', error: '#c0392b', skipped: '#c58a12'};
+
+// --- small helpers ---------------------------------------------------------------------------------
+function byId(id) {
+  return document.getElementById(id);
+}
+
+// create an element; text always goes in as textContent, so scraped titles can never inject HTML
+function make(tag, props = {}, ...children) {
+  const element = document.createElement(tag);
+  Object.assign(element, props);
+  element.append(...children);
+  return element;
+}
+
+// a link that opens in a new tab, or plain text if the address isn't http(s)
+function link(href, text) {
+  if (!/^https?:\/\//.test(href || '')) return text;
+  return make('a', {href, textContent: text, target: '_blank', rel: 'noopener'});
+}
+
+function badge(status, text) {
+  const label = make('span', {className: 'badge', textContent: text ?? status.replaceAll('_', ' ')});
+  label.style.background = COLORS[status] || 'var(--mute)';
+  return label;
+}
+
+function number(n) {
+  return (n ?? 0).toLocaleString();
+}
+
+function duration(seconds) {
+  if (seconds < 60) return `${Math.round(seconds)} s`;
+  return `${Math.floor(seconds / 60)} min ${Math.round(seconds % 60)} s`;
+}
+
+// --- the data --------------------------------------------------------------------------------------
+const townByAgs = {};
+for (const town of data.towns) townByAgs[town.ags] = town;
+
+// records come as short lists to keep the file small; turn them into objects
+const records = data.records.map(([ags, title, date, type, step, confidence, url, change]) =>
+  ({ags, title, date, type, step, confidence, url, change, town: townByAgs[ags] || {}}));
+
+// newest first; flagged future dates (end of a display period) sort last
+function pastDate(date) {
+  return date && date <= meta.today ? date : '';
+}
+function newestFirst(a, b) {
+  return pastDate(b.date).localeCompare(pastDate(a.date));
+}
+
+// --- top: which run, and a one-line summary that opens to show the step times -------------------------
+const filterText = Object.entries(meta.filters || {})
+  .filter(([, value]) => value != null && value !== 0)
+  .map(([name, value]) => `${name}=${value}`)
+  .join(', ');
+byId('sub').textContent = `Run ${meta.run_id} · source verified: ${meta.source_verified_at} · ` +
+  (filterText ? 'filters: ' + filterText : 'all of Bavaria');
+
+const steps = meta.steps || [];
+let totalSeconds = 0;
+for (const step of steps) totalSeconds += step.seconds;
+byId('runline').textContent = steps.length
+  ? `✓ Run finished in ${duration(totalSeconds)} (show steps)`
+  : 'Step timings not recorded for this run';
+for (const step of steps) {
+  const details = Object.entries(step)
+    .filter(([name]) => !['step', 'seconds', 'status'].includes(name))
+    .map(([name, value]) => `${name.replaceAll('_', ' ')} ${typeof value === 'number' ? number(value) : value}`)
+    .join(', ');
+  byId('steps').append(make('li', {textContent: `${step.step} · ${duration(step.seconds)} · ${details}`}));
+}
+
+// --- headline numbers ------------------------------------------------------------------------------
+const selectStep = steps.find(step => step.step === 'select');
+const townsWithLink = selectStep ? selectStep.with_link : data.towns.filter(town => town.status !== 'skipped').length;
+const tiles = [
+  [number(statusCounts.ok), `towns with notices (of ${number(townsWithLink)} with a link)`],
+  [number(meta.records), 'records'],
+  [meta.tracked_changes ? number(load.inserted) : '–', 'new this run'],
+  [meta.tracked_changes ? number(load.updated_changed) : '–', 'changed this run'],
+  [number(statusCounts.error), 'towns with errors'],
+  [number(statusCounts.skipped), 'towns skipped (no usable link, or JavaScript-only page)'],
+];
+if (load.rejected && load.rejected.length) tiles.push([number(load.rejected.length), 'rows rejected by the database']);
+for (const [value, label] of tiles) {
+  byId('tiles').append(make('div', {className: 'card tile'}, make('b', {textContent: value}), make('span', {textContent: label})));
+}
+
+// --- the actual news of this run: records that were inserted or updated --------------------------------
+const changedRecords = records.filter(record => record.change).sort(newestFirst);
+let shownCount = 100;
+
+function renderChanges() {
+  const search = byId('cq').value.toLowerCase();
+  const kind = byId('ck').value;
+  const rows = changedRecords.filter(record => {
+    if (kind && record.change !== kind) return false;
+    return !search || `${record.title} ${record.town.municipality}`.toLowerCase().includes(search);
+  });
+  byId('ccount').textContent = `${number(rows.length)} records`;
+  const tableRows = rows.slice(0, shownCount).map(record => make('tr', {},
+    make('td', {}, badge(record.change)),
+    make('td', {className: 'date', textContent: record.date || '—'}),
+    make('td', {textContent: record.town.municipality || record.ags}),
+    make('td', {textContent: record.type}),
+    make('td', {textContent: record.step || ''}),
+    make('td', {}, link(record.url, record.title))));
+  document.querySelector('#ctab tbody').replaceChildren(...tableRows);
+  byId('cmore').hidden = rows.length <= shownCount;
+}
+
+if (!meta.tracked_changes) {
+  byId('cnote').textContent = meta.load_error
+    ? `Nothing was stored: the database step failed (${meta.load_error}). ` +
+      'The scraped records are kept in records.jsonl; the next run stores them.'
+    : 'Not tracked for this run (dry run, or a run from before change tracking).';
+  byId('ctab').hidden = true;
+} else {
+  if (changedRecords.length && changedRecords.length === records.length) {
+    byId('cnote').textContent = 'First load into an empty table: every record is new.';
+  }
+  if (!changedRecords.length) byId('cnote').textContent = 'Nothing new or changed since the last run.';
+  byId('cq').oninput = () => { shownCount = 100; renderChanges(); };
+  byId('ck').onchange = () => { shownCount = 100; renderChanges(); };
+  byId('cmore').onclick = () => { shownCount += 100; renderChanges(); };
+  renderChanges();
+}
+
+// --- newest notices by date (future dates are flagged on the record and left out here) -----------------
+const latest = records.filter(record => record.date && record.date <= meta.today).sort(newestFirst).slice(0, 20);
+for (const record of latest) {
+  const typeAndStep = record.type + (record.step ? ' · ' + record.step : '');
+  document.querySelector('#latest tbody').append(make('tr', {},
+    make('td', {className: 'date', textContent: record.date}),
+    make('td', {},
+      make('b', {textContent: record.town.municipality || record.ags}),
+      make('br'),
+      make('span', {className: 'mute', textContent: typeAndStep})),
+    make('td', {}, link(record.url, record.title))));
+}
+
+// count records per value, e.g. per type: {bplan: 7849, fnp: 2275, ...}
+function countBy(getValue) {
+  const counts = {};
+  for (const record of records) {
+    const value = getValue(record);
+    counts[value] = (counts[value] || 0) + 1;
+  }
+  return counts;
+}
+
+// a simple horizontal bar chart
+function bars(id, counts) {
+  const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  const biggest = Math.max(...entries.map(([, count]) => count), 1);
+  for (const [label, count] of entries) {
+    const fill = make('div', {className: 'fill'});
+    fill.style.width = (100 * count / biggest) + '%';
+    byId(id).append(make('div', {className: 'bar'},
+      make('span', {textContent: label}),
+      make('div', {className: 'track'}, fill),
+      make('span', {className: 'num', textContent: number(count)})));
+  }
+}
+bars('by-type', countBy(record => record.type));
+bars('by-region', countBy(record => record.town.region || '?'));
+bars('by-step', countBy(record => record.step || 'not found'));
+
+// --- one circle per town: colour = status, size = number of notices --------------------------------------
+for (const [status, color] of Object.entries(MAP_COLORS)) {
+  const dot = make('span', {className: 'dot'});
+  dot.style.background = color;
+  byId('legend').append(make('span', {}, dot, `${status.replaceAll('_', ' ')} (${number(statusCounts[status])})`));
+}
+byId('legend').append(make('span', {className: 'mute', textContent: 'circle size = number of notices'}));
+
+if (window.L) {
+  const map = L.map('map', {preferCanvas: true}).setView([49.0, 11.4], 7);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              {maxZoom: 18, attribution: '© OpenStreetMap contributors'}).addTo(map);
+  const points = data.towns.filter(town => town.lonlat).map(town => [town.lonlat[1], town.lonlat[0]]);
+  if (points.length) map.fitBounds(points, {padding: [20, 20], maxZoom: 11});
+  for (const town of data.towns) {
+    if (!town.lonlat) continue;
+    const circle = L.circleMarker([town.lonlat[1], town.lonlat[0]], {
+      radius: 3 + Math.min(9, Math.sqrt(town.notices)),
+      color: MAP_COLORS[town.status], weight: 1, fillOpacity: .7,
+    });
+    const statusText = town.status.replaceAll('_', ' ') + (town.reason ? ' · ' + town.reason : '');
+    circle.bindPopup(() => make('div', {},
+      make('b', {textContent: town.municipality}), make('br'),
+      `${statusText} · ${town.notices} notices`, make('br'),
+      link(town.url, 'source page')));
+    circle.addTo(map);
+  }
+} else {
+  byId('map').textContent = 'The map needs internet access (Leaflet from unpkg.com).';
+}
+
+// --- errors and skips grouped by reason, with the towns behind each one ---------------------------------
+const townsByReason = {};
+for (const town of data.towns) {
+  if (!town.reason || town.status === 'ok') continue;
+  if (!townsByReason[town.reason]) townsByReason[town.reason] = [];
+  townsByReason[town.reason].push(town);
+}
+const problemsTable = document.querySelector('#errors tbody');
+const reasonsBiggestFirst = Object.entries(townsByReason).sort((a, b) => b[1].length - a[1].length);
+for (const [reason, towns] of reasonsBiggestFirst) {
+  const firstNames = towns.slice(0, 4).map(town => town.municipality).join(', ') + (towns.length > 4 ? ' …' : '');
+  const allNames = make('details', {}, make('summary', {textContent: firstNames}));
+  for (const town of towns) allNames.append(link(town.url, town.municipality), ' ');
+  problemsTable.append(make('tr', {},
+    make('td', {}, badge(towns[0].status), ' ', reason),
+    make('td', {className: 'num', textContent: towns.length}),
+    make('td', {}, allNames)));
+}
+if (!problemsTable.children.length) {
+  problemsTable.append(make('tr', {}, make('td', {colSpan: 3, className: 'mute', textContent: 'No errors or skipped towns in this run.'})));
+}
+
+// --- every town, collapsed by default; clicking a row shows its records ----------------------------------
+const statusFilter = byId('st');
+for (const status of Object.keys(statusCounts)) {
+  statusFilter.append(make('option', {value: status, textContent: status.replaceAll('_', ' ')}));
+}
+const townsTable = document.querySelector('#towns tbody');
+
+function townRecordsRow(town) {
+  const townRecords = records.filter(record => record.ags === town.ags);
+  let content;
+  if (townRecords.length) {
+    content = make('table', {}, ...townRecords.map(record => make('tr', {},
+      make('td', {className: 'date', textContent: record.date || '—'}),
+      make('td', {textContent: record.type}),
+      make('td', {textContent: record.step || ''}),
+      make('td', {textContent: record.confidence}),
+      make('td', {}, link(record.url, record.title)))));
+  } else {
+    content = make('span', {className: 'mute', textContent: 'No records from this town.'});
+  }
+  return make('tr', {className: 'sub'}, make('td', {colSpan: 9}, content));
+}
+
+function renderTowns() {
+  const search = byId('q').value.toLowerCase();
+  const status = statusFilter.value;
+  const towns = data.towns.filter(town => {
+    if (status && town.status !== status) return false;
+    return !search || `${town.municipality} ${town.ags} ${town.district}`.toLowerCase().includes(search);
+  });
+  byId('count').textContent = `${towns.length} of ${data.towns.length}`;
+  const rows = towns.slice(0, 600).map(town => {
+    const rawLink = town.raw ? make('a', {href: 'raw/' + town.raw, textContent: 'raw', target: '_blank'}) : '';
+    const row = make('tr', {className: 'town', title: 'Click to show records'},
+      make('td', {textContent: town.ags}),
+      make('td', {textContent: town.municipality}),
+      make('td', {textContent: town.district}),
+      make('td', {}, badge(town.status)),
+      make('td', {textContent: town.reason || ''}),
+      make('td', {className: 'num', textContent: town.pages}),
+      make('td', {className: 'num', textContent: town.notices}),
+      make('td', {className: 'num', textContent: town.seconds ?? ''}),
+      make('td', {}, link(town.url, 'page'), ' ', rawLink));
+    // click once to open the town's records, click again to close them
+    row.onclick = () => {
+      if (row.nextSibling && row.nextSibling.className === 'sub') {
+        row.nextSibling.remove();
+      } else {
+        row.after(townRecordsRow(town));
+      }
+    };
+    return row;
+  });
+  townsTable.replaceChildren(...rows);
+  if (towns.length > 600) {
+    townsTable.append(make('tr', {}, make('td', {colSpan: 9, className: 'mute',
+      textContent: `Showing 600 of ${towns.length}; search or filter to narrow.`})));
+  }
+}
+byId('q').oninput = renderTowns;
+statusFilter.onchange = renderTowns;
+renderTowns();
+</script></body></html>

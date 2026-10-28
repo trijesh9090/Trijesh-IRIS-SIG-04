@@ -1,0 +1,103 @@
+1. Volume by region / signal type
+    region     |  signal_type   | count 
+---------------+----------------+-------
+ Mittelfranken | bplan          |   527
+ Mittelfranken | fnp            |   178
+ Mittelfranken | other_planning |    84
+ Niederbayern  | bplan          |   974
+ Niederbayern  | fnp            |   412
+ Niederbayern  | other_planning |   253
+ Oberbayern    | bplan          |  2556
+ Oberbayern    | fnp            |   548
+ Oberbayern    | other_planning |   392
+ Oberfranken   | bplan          |   659
+ Oberfranken   | fnp            |   208
+ Oberfranken   | other_planning |   110
+ Oberpfalz     | bplan          |   657
+ Oberpfalz     | fnp            |   299
+ Oberpfalz     | other_planning |    66
+ Schwaben      | bplan          |  1313
+ Schwaben      | fnp            |   270
+ Schwaben      | other_planning |   313
+ Unterfranken  | bplan          |  1174
+ Unterfranken  | fnp            |   359
+ Unterfranken  | other_planning |    91
+(21 rows)
+
+2. Duplicates on the business key (must be 0 rows; also enforced by UNIQUE constraint)
+ source | source_record_id | count 
+--------+------------------+-------
+(0 rows)
+
+3. Geometry: SRID, validity, inside Bavaria envelope (bad_* must be 0)
+ with_geom | bad_srid | bad_invalid | bad_outside_bavaria | unresolved 
+-----------+----------+-------------+---------------------+------------
+     11443 |        0 |           0 |                   0 |          0
+(1 row)
+
+4. Cross-check: point in WGS84 should be inside Bavaria lon 8.9-13.9 / lat 47.2-50.6 (must be 0 rows)
+ ags | municipality | st_astext 
+-----+--------------+-----------
+(0 rows)
+
+5. Missing fields (visibility, not errors)
+ total | missing_date | date_from_filename | missing_step | no_documents | future_date 
+-------+--------------+--------------------+--------------+--------------+-------------
+ 11443 |         7443 |                923 |         6021 |         3689 |           8
+(1 row)
+
+6. Confidence and quality flags
+ confidence | count 
+------------+-------
+ high       |  2981
+ low        |  3332
+ medium     |  5130
+(3 rows)
+
+        flag         | count 
+---------------------+-------
+ missing_date        |  7443
+ fallback_url_1      |  6324
+ step_unknown        |  6021
+ no_documents        |  3689
+ date_from_filename  |   923
+ title_from_heading  |   130
+ title_from_text     |    85
+ title_from_filename |    12
+ date_in_future      |     8
+ direct_pdf          |     1
+(10 rows)
+
+7. Traceability: every row has source URLs and an ags-prefixed id (must be 0)
+ count 
+-------
+     0
+(1 row)
+
+8. Re-run evidence: rows seen in more than one run keep first_seen_at < last_seen_at
+     last_run     | rows  | seen_before 
+------------------+-------+-------------
+ 20261027T221546Z |    26 |           0
+ 20261027T222630Z | 11417 |       11417
+(2 rows)
+
+9. Latest notices
+ published_at |    municipality    |  signal_type   |      procedure_step      |                                 title                                  
+--------------+--------------------+----------------+--------------------------+------------------------------------------------------------------------
+ 2026-12-06   | Röslau             | other_planning | fruehzeitige_beteiligung | Lageplan Bauleitplanung
+ 2026-11-27   | Roggenburg         | fnp            | aenderung                | 10/26 5. Flächennutzungsplanänderung
+ 2026-11-16   | Stephanskirchen    | bplan          | fruehzeitige_beteiligung | Bebauungsplan Nr. 40 c "Westerndorf - Filzenweg (Süd)/Birkenriedstraße
+ 2026-11-16   | Dießen am Ammersee | other_planning | aenderung                | Bauleitplanung
+ 2026-11-16   | Stephanskirchen    | bplan          | aenderung                | Bebauungsplan Nr. 9 "Leiten"/31. Änderung (Atriumhäuser am Geigelstein
+ 2026-11-16   | Dießen am Ammersee | other_planning | aenderung                | Bauleitplanung
+ 2026-11-11   | Sauerlach          | other_planning | auslegung                | Auslegung der Außenbereichsatzung "Feistbauer"
+ 2026-11-09   | Nürnberg           | bplan          | auslegung                | Veröffentlichung im Internet zum Entwurf der Änderung des Bebauungspla
+ 2026-10-27   | Fürstenstein       | other_planning | satzungsbeschluss        | Bekanntmachung des Satzungsbeschlusses zur Änderung der Ortsabrundungs
+ 2026-10-27   | Fürstenstein       | other_planning | aufstellungsbeschluss    | Neuaufstellung der Außenbereichssatzung „Mutholz“ – Aufstellungsbeschl
+ 2026-10-27   | Herrieden          | bplan          | auslegung                | Beteiligung der Öffentlichkeit gemäß § 3 Abs. 2 BauGB zur Aufstellung 
+ 2026-10-27   | Fürstenstein       | other_planning | auslegung                | Neuaufstellung der Außenbereichssatzung „Mutholz“ – öffentliche Ausleg
+ 2026-10-26   | Oberding           | fnp            | aenderung                | 10. Flächennutzungsplanänderung Oberding - Förmliche Beteiligung der Ö
+ 2026-10-26   | Nürnberg           | bplan          | auslegung                | Veröffentlichung im Internet zur Änderung des Bebauungsplans Nr. 4551
+ 2026-10-26   | Beilngries         | fnp            | aenderung                | 67. Änderung des Flächennutzungsplans in Paulushofen
+(15 rows)
+

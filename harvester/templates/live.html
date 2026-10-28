@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Harvest run · live</title>
+<style>
+:root{--bg:#f7f7f5;--card:#fff;--fg:#1d1d1b;--mute:#6b6b66;--line:#e3e2dc;--ok:#2f7d4f;--empty:#8a8a83;--error:#c0392b;--skipped:#c58a12;--bar:#3b6ea5}
+@media (prefers-color-scheme:dark){:root{--bg:#161615;--card:#1f1f1d;--fg:#ecebe6;--mute:#9b9a93;--line:#33322f;--bar:#6c9bd2}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}
+main{max-width:860px;margin:0 auto;padding:28px 16px 64px}h1{font-size:22px;margin:0 0 4px}.mute{color:var(--mute)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-top:16px}
+ol{list-style:none;margin:0;padding:0}.step{display:grid;grid-template-columns:28px 1fr auto;gap:10px;padding:10px 4px;border-bottom:1px solid var(--line)}
+.step:last-child{border-bottom:0}.step b{font-weight:600}.step .d{color:var(--mute);font-size:12px}.t{font-variant-numeric:tabular-nums;color:var(--mute)}
+.icon{width:20px;height:20px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center;font-size:12px;color:#fff;margin-top:1px}
+.done .icon{background:var(--ok);border-color:var(--ok)}.failed .icon{background:var(--error);border-color:var(--error)}
+.running .icon{border-color:var(--bar);border-top-color:transparent;animation:spin .9s linear infinite}.waiting b{color:var(--mute);font-weight:500}
+@keyframes spin{to{transform:rotate(360deg)}}@media (prefers-reduced-motion:reduce){.running .icon{animation:none;border-top-color:var(--bar)}}
+.track{background:var(--line);border-radius:6px;height:12px;margin:10px 0 6px}.fill{background:var(--bar);height:12px;border-radius:6px;transition:width .4s}
+.counts{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.badge{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;color:#fff}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}@media (max-width:640px){.cols{grid-template-columns:1fr}}
+h3{font-size:13px;margin:12px 0 6px;color:var(--mute);font-weight:600}ul{margin:0;padding:0;list-style:none}li{padding:2px 0}
+a{color:var(--bar)}
+</style></head><body><main>
+<h1>Harvest run <span id="run"></span></h1><div class="mute" id="sub">Connecting…</div>
+<ol class="card" id="steps"></ol>
+<section class="card" id="crawl" hidden>
+  <b>Extracting notices from municipal websites</b>
+  <div class="track"><div class="fill" id="fill" style="width:0"></div></div>
+  <div id="prog" class="t"></div><div class="counts" id="counts"></div>
+  <div class="cols"><div><h3>Working on now</h3><ul id="active"></ul></div><div><h3>Just finished</h3><ul id="recent"></ul></div></div>
+</section>
+<section class="card" id="done" hidden>✓ Run finished. Opening the dashboard… <a href="/report.html">Open dashboard</a></section>
+<script>
+const COLORS = {ok: 'var(--ok)', no_planning_content: 'var(--empty)', error: 'var(--error)', skipped: 'var(--skipped)'};
+
+// --- small helpers ---------------------------------------------------------------------------------
+function byId(id) {
+  return document.getElementById(id);
+}
+
+// create an element; text always goes in as textContent, so town names can never inject HTML
+function make(tag, props = {}, ...children) {
+  const element = document.createElement(tag);
+  Object.assign(element, props);
+  element.append(...children);
+  return element;
+}
+
+function badge(status, text) {
+  const label = make('span', {className: 'badge', textContent: text ?? status});
+  label.style.background = COLORS[status] || 'var(--mute)';
+  return label;
+}
+
+function number(n) {
+  return (n ?? 0).toLocaleString();
+}
+
+function duration(seconds) {
+  if (seconds < 60) return `${seconds.toFixed(1)} s`;
+  return `${Math.floor(seconds / 60)} min ${Math.round(seconds % 60)} s`;
+}
+
+// one detail value as text: numbers get thousands separators, small objects become "name 12, other 3"
+function detailText(value) {
+  if (typeof value === 'object') {
+    return Object.entries(value).map(([name, count]) => `${name} ${number(count)}`).join(', ');
+  }
+  return typeof value === 'number' ? number(value) : value;
+}
+
+// --- drawing -------------------------------------------------------------------------------------------
+function stepIcon(state) {
+  if (state === 'done') return '✓';
+  if (state === 'failed') return '✗';
+  return '';
+}
+
+function renderSteps(status) {
+  const items = status.steps.map(step => {
+    const seconds = step.state === 'running' ? status.now - step.started : step.seconds;
+    const details = Object.entries(step.detail || {})
+      .filter(([name]) => name !== 'status')
+      .map(([name, value]) => `${name.replaceAll('_', ' ')}: ${detailText(value)}`)
+      .join(' · ');
+    return make('li', {className: 'step ' + step.state},
+      make('span', {className: 'icon', textContent: stepIcon(step.state)}),
+      make('div', {}, make('b', {textContent: step.label}), make('div', {className: 'd', textContent: details})),
+      make('span', {className: 't', textContent: seconds != null ? duration(seconds) : ''}));
+  });
+  byId('steps').replaceChildren(...items);
+}
+
+function renderCrawl(status) {
+  const crawl = status.crawl;
+  const crawlStep = status.steps.find(step => step.step === 'crawl');
+  byId('crawl').hidden = crawlStep.state === 'waiting';
+
+  if (crawl.total) {
+    const percent = 100 * crawl.done / crawl.total;
+    const elapsed = crawlStep.state === 'running' ? status.now - crawlStep.started : crawlStep.seconds;
+    byId('fill').style.width = percent + '%';
+    // time left: assume the remaining towns take as long on average as the ones done so far
+    let timeLeft = '';
+    if (crawl.done && crawlStep.state === 'running') {
+      timeLeft = ` · about ${duration((crawl.total - crawl.done) * elapsed / crawl.done)} left`;
+    }
+    byId('prog').textContent = `${number(crawl.done)} / ${number(crawl.total)} towns · ${Math.floor(percent)}% · ` +
+      `${number(crawl.notices)} notices found${timeLeft}`;
+  }
+
+  const counters = Object.entries(crawl.status).map(([name, count]) => badge(name, `${name.replaceAll('_', ' ')} ${number(count)}`));
+  byId('counts').replaceChildren(...counters);
+
+  if (crawl.active.length) {
+    byId('active').replaceChildren(...crawl.active.map(name => make('li', {textContent: '◐ ' + name})));
+  } else {
+    byId('active').replaceChildren(make('li', {className: 'mute', textContent: '—'}));
+  }
+
+  const finished = crawl.recent.map(town => {
+    let mark = '–';
+    if (town.status === 'ok') mark = '✓';
+    if (town.status === 'error') mark = '✗';
+    let result;
+    if (town.status === 'ok') {
+      result = ` · ${town.notices} notice${town.notices === 1 ? '' : 's'}`;
+    } else {
+      result = ` · ${town.reason || town.status.replaceAll('_', ' ')}`;
+    }
+    return make('li', {}, badge(town.status, mark), ' ', town.municipality, make('span', {className: 'mute', textContent: result}));
+  });
+  byId('recent').replaceChildren(...finished);
+}
+
+// redraw the whole page from one status snapshot
+function render(status) {
+  byId('run').textContent = status.run_id;
+  const running = status.steps.find(step => step.state === 'running');
+  if (status.error) byId('sub').textContent = `Failed: ${status.error}`;
+  else if (status.finished) byId('sub').textContent = 'Finished';
+  else if (running) byId('sub').textContent = `Now: ${running.label}`;
+  else byId('sub').textContent = 'Starting…';
+  renderSteps(status);
+  renderCrawl(status);
+}
+
+// ask for the status once a second until the run is finished (or failed for good)
+async function tick() {
+  try {
+    const response = await fetch('/status.json', {cache: 'no-store'});
+    const status = await response.json();
+    render(status);
+    if (status.finished) {
+      byId('done').hidden = false;
+      setTimeout(() => { location.href = '/report.html'; }, 1500);
+      return;
+    }
+    const stillWorking = status.steps.some(step => step.state === 'running' || step.state === 'waiting');
+    if (status.error && !stillWorking) return;
+  } catch (e) {
+    byId('sub').textContent = 'Connection lost. Is the run still going?';
+  }
+  setTimeout(tick, 1000);
+}
+tick();
+</script></body></html>
